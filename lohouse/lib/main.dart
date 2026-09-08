@@ -1,7 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_app_installer/flutter_app_installer.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 abstract final class KitchenColors {
   static const background = Color(0xff160b22);
@@ -11,6 +20,74 @@ abstract final class KitchenColors {
   static const gold = Color(0xffffc44d);
   static const text = Color(0xffffeff8);
   static const muted = Color(0xffc9aecb);
+}
+
+class AppUpdate {
+  const AppUpdate({
+    required this.versionCode,
+    required this.versionName,
+    required this.title,
+    required this.changelog,
+    required this.forceUpdate,
+    required this.apkUrl,
+  });
+
+  final int versionCode;
+  final String versionName;
+  final String title;
+  final String changelog;
+  final bool forceUpdate;
+  final String apkUrl;
+
+  factory AppUpdate.fromJson(Map<String, dynamic> json) => AppUpdate(
+    versionCode: json['versionCode'] as int,
+    versionName: json['versionName'] as String,
+    title: json['title'] as String? ?? '发现新版本',
+    changelog: json['changelog'] as String? ?? '',
+    forceUpdate: json['forceUpdate'] as bool? ?? false,
+    apkUrl: json['apkUrl'] as String,
+  );
+}
+
+class UpdateService {
+  static const _metadataUrl =
+      'https://raw.githubusercontent.com/zezakgong/gg/main/lohouse/update.json';
+  final Dio _dio = Dio();
+
+  Future<AppUpdate?> findUpdate() async {
+    if (!Platform.isAndroid) return null;
+    final response = await _dio
+        .get<String>(_metadataUrl)
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != HttpStatus.ok || response.data == null) {
+      return null;
+    }
+    final update = AppUpdate.fromJson(
+      jsonDecode(response.data!) as Map<String, dynamic>,
+    );
+    final local = await PackageInfo.fromPlatform();
+    final localCode = int.tryParse(local.buildNumber) ?? 0;
+    return update.versionCode > localCode ? update : null;
+  }
+
+  Future<void> downloadAndInstall(
+    AppUpdate update,
+    void Function(int received, int total) onProgress,
+  ) async {
+    final directory = await getExternalStorageDirectory();
+    if (directory == null) throw StateError('无法获取更新文件的存储目录');
+    final apk = File(
+      '${directory.path}${Platform.pathSeparator}guoguo-kitchen-update.apk',
+    );
+    if (await apk.exists()) await apk.delete();
+    await _dio.download(
+      update.apkUrl,
+      apk.path,
+      onReceiveProgress: onProgress,
+      options: Options(receiveTimeout: const Duration(minutes: 5)),
+    );
+    await FlutterAppInstaller().installApk(filePath: apk.path);
+  }
 }
 
 void main() => runApp(const GuoguoKitchenApp());
@@ -102,6 +179,244 @@ class Recipe {
   final String tip;
 }
 
+class RecipeCodec {
+  static Map<String, dynamic> toJson(
+    Recipe recipe, {
+    String Function(String path)? pathMapper,
+  }) {
+    final mapPath = pathMapper ?? (path) => path;
+    return {
+      'name': recipe.name,
+      'category': recipe.category,
+      'coverImages': recipe.coverImages
+          .map((image) => mapPath(image.path))
+          .toList(),
+      'ingredients': recipe.ingredients
+          .map((item) => {'name': item.name, 'amount': item.amount})
+          .toList(),
+      'steps': recipe.steps
+          .map(
+            (step) => {
+              'description': step.description,
+              'images': step.images
+                  .map((image) => mapPath(image.path))
+                  .toList(),
+            },
+          )
+          .toList(),
+      'tip': recipe.tip,
+    };
+  }
+
+  static Recipe fromJson(
+    Map<String, dynamic> json, {
+    String Function(String path)? pathMapper,
+  }) {
+    final mapPath = pathMapper ?? (path) => path;
+    return Recipe(
+      name: json['name'] as String? ?? '',
+      category: json['category'] as String? ?? '其他',
+      coverImages: (json['coverImages'] as List<dynamic>? ?? [])
+          .whereType<String>()
+          .map((path) => XFile(mapPath(path)))
+          .toList(),
+      ingredients: (json['ingredients'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map(
+            (item) => Ingredient(
+              name: item['name'] as String? ?? '',
+              amount: item['amount'] as String? ?? '',
+            ),
+          )
+          .toList(),
+      steps: (json['steps'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map(
+            (item) => RecipeStep(
+              description: item['description'] as String? ?? '',
+              images: (item['images'] as List<dynamic>? ?? [])
+                  .whereType<String>()
+                  .map((path) => XFile(mapPath(path)))
+                  .toList(),
+            ),
+          )
+          .toList(),
+      tip: json['tip'] as String? ?? '',
+    );
+  }
+}
+
+class RecipeStore {
+  static const _recipesKey = 'recipes_v1';
+
+  static Future<Directory> _mediaDirectory() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final directory = Directory(
+      '${documents.path}${Platform.pathSeparator}recipe_images',
+    );
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  static Future<List<XFile>> persistImages(List<XFile> images) async {
+    final directory = await _mediaDirectory();
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final copied = <XFile>[];
+    for (var index = 0; index < images.length; index++) {
+      final source = File(images[index].path);
+      if (!await source.exists()) continue;
+      final extension = source.path.contains('.')
+          ? source.path.substring(source.path.lastIndexOf('.'))
+          : '.jpg';
+      final target = File(
+        '${directory.path}${Platform.pathSeparator}${timestamp}_$index$extension',
+      );
+      await source.copy(target.path);
+      copied.add(XFile(target.path));
+    }
+    return copied;
+  }
+
+  static Future<List<Recipe>> load() async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString(_recipesKey);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .whereType<Map>()
+          .map((item) => RecipeCodec.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> save(List<Recipe> recipes) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+      _recipesKey,
+      jsonEncode(recipes.map(RecipeCodec.toJson).toList()),
+    );
+  }
+
+  static Future<File> exportRecipes(List<Recipe> recipes) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('目前仅支持 Android 导出备份');
+    }
+    var permission = await Permission.manageExternalStorage.status;
+    if (!permission.isGranted) {
+      permission = await Permission.manageExternalStorage.request();
+    }
+    if (!permission.isGranted) {
+      throw StateError('需要“管理所有文件”权限才能导出到手机根目录');
+    }
+
+    final archive = Archive();
+    final imageNames = <String, String>{};
+    var imageIndex = 0;
+    Future<String> archivePathFor(String path) async {
+      if (imageNames.containsKey(path)) return imageNames[path]!;
+      final file = File(path);
+      if (!await file.exists()) return '';
+      final extension = path.contains('.')
+          ? path.substring(path.lastIndexOf('.'))
+          : '.jpg';
+      final archivePath = 'images/${imageIndex++}$extension';
+      archive.addFile(
+        ArchiveFile(archivePath, await file.length(), await file.readAsBytes()),
+      );
+      imageNames[path] = archivePath;
+      return archivePath;
+    }
+
+    final exported = <Map<String, dynamic>>[];
+    for (final recipe in recipes) {
+      final paths = <String, String>{};
+      final allImages = [
+        ...recipe.coverImages,
+        ...recipe.steps.expand((step) => step.images),
+      ];
+      for (final image in allImages) {
+        paths[image.path] = await archivePathFor(image.path);
+      }
+      exported.add(
+        RecipeCodec.toJson(recipe, pathMapper: (path) => paths[path] ?? ''),
+      );
+    }
+    final recipeBytes = utf8.encode(jsonEncode(exported));
+    archive.addFile(
+      ArchiveFile('recipes.json', recipeBytes.length, recipeBytes),
+    );
+    final bytes = ZipEncoder().encode(archive);
+    final rootFolder = Directory('/storage/emulated/0/GuoguoKitchen');
+    if (!await rootFolder.exists()) {
+      await rootFolder.create(recursive: true);
+    }
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .split('.')
+        .first;
+    final backup = File(
+      '${rootFolder.path}${Platform.pathSeparator}guoguo_kitchen_$timestamp.zip',
+    );
+    await backup.writeAsBytes(bytes, flush: true);
+    return backup;
+  }
+
+  static Future<List<Recipe>> importRecipes() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['zip'],
+    );
+    if (picked == null || picked.files.single.path == null) {
+      return [];
+    }
+    final archive = ZipDecoder().decodeBytes(
+      await File(picked.files.single.path!).readAsBytes(),
+    );
+    ArchiveFile? dataFile;
+    for (final file in archive.files) {
+      if (file.name == 'recipes.json') {
+        dataFile = file;
+        break;
+      }
+    }
+    if (dataFile == null || !dataFile.isFile) {
+      throw FormatException('备份文件中没有 recipes.json');
+    }
+    final mediaDirectory = await _mediaDirectory();
+    final importDirectory = Directory(
+      '${mediaDirectory.path}${Platform.pathSeparator}import_${DateTime.now().microsecondsSinceEpoch}',
+    );
+    await importDirectory.create(recursive: true);
+    for (final file in archive.files) {
+      if (!file.isFile ||
+          !file.name.startsWith('images/') ||
+          file.name.contains('..')) {
+        continue;
+      }
+      final target = File(
+        '${importDirectory.path}${Platform.pathSeparator}${file.name.substring('images/'.length)}',
+      );
+      await target.writeAsBytes(file.content as List<int>);
+    }
+    final entries =
+        jsonDecode(utf8.decode(dataFile.content as List<int>)) as List<dynamic>;
+    return entries
+        .whereType<Map>()
+        .map(
+          (item) => RecipeCodec.fromJson(
+            Map<String, dynamic>.from(item),
+            pathMapper: (path) => path.isEmpty
+                ? path
+                : '${importDirectory.path}${Platform.pathSeparator}${path.replaceFirst('images/', '')}',
+          ),
+        )
+        .toList();
+  }
+}
+
 class RecipeHomePage extends StatefulWidget {
   const RecipeHomePage({super.key});
   @override
@@ -110,6 +425,9 @@ class RecipeHomePage extends StatefulWidget {
 
 class _RecipeHomePageState extends State<RecipeHomePage> {
   final List<Recipe> _recipes = [];
+  final _updateService = UpdateService();
+  final Set<Recipe> _selectedRecipes = {};
+  bool _selectionMode = false;
   String _category = '全部';
   final _categories = const ['全部', '家常菜', '烘焙', '甜品', '饮品', '汤羹', '其他'];
 
@@ -117,26 +435,271 @@ class _RecipeHomePageState extends State<RecipeHomePage> {
       ? _recipes
       : _recipes.where((recipe) => recipe.category == _category).toList();
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    _loadRecipes();
+  }
+
+  Future<void> _loadRecipes() async {
+    final saved = await RecipeStore.load();
+    if (mounted) setState(() => _recipes.addAll(saved));
+  }
+
+  Future<void> _saveRecipes() => RecipeStore.save(_recipes);
+
+  Future<void> _checkForUpdate({bool showUpToDate = false}) async {
+    try {
+      final update = await _updateService.findUpdate();
+      if (!mounted) return;
+      if (update == null) {
+        if (showUpToDate) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已经是最新版本啦')));
+        }
+        return;
+      }
+      await _showUpdateDialog(update);
+    } catch (_) {
+      if (mounted && showUpToDate) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('暂时无法检查更新，请稍后再试')));
+      }
+    }
+  }
+
+  Future<void> _showUpdateDialog(AppUpdate update) => showDialog<void>(
+    context: context,
+    barrierDismissible: !update.forceUpdate,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.auto_awesome, color: KitchenColors.gold),
+      title: Text(update.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '版本 ${update.versionName}',
+            style: const TextStyle(color: KitchenColors.pink),
+          ),
+          const SizedBox(height: 12),
+          Text(update.changelog),
+        ],
+      ),
+      actions: [
+        if (!update.forceUpdate)
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('暂不更新'),
+          ),
+        FilledButton.icon(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _downloadAndInstall(update);
+          },
+          icon: const Icon(Icons.download_rounded),
+          label: const Text('下载更新'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _downloadAndInstall(AppUpdate update) async {
+    final progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('正在下载更新'),
+          content: ValueListenableBuilder<double>(
+            valueListenable: progress,
+            builder: (_, value, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: value == 0 ? null : value),
+                const SizedBox(height: 12),
+                Text(
+                  value == 0
+                      ? '正在连接服务器…'
+                      : '已下载 ${(value * 100).toStringAsFixed(0)}%',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    try {
+      await _updateService.downloadAndInstall(update, (received, total) {
+        if (total > 0) progress.value = received / total;
+      });
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    } catch (_) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('更新下载失败，请检查网络后重试')));
+      }
+    } finally {
+      progress.dispose();
+    }
+  }
+
   Future<void> _addRecipe() async {
     final recipe = await Navigator.of(
       context,
     ).push<Recipe>(MaterialPageRoute(builder: (_) => const RecipeEditorPage()));
-    if (recipe != null) setState(() => _recipes.insert(0, recipe));
+    if (recipe != null) {
+      setState(() => _recipes.insert(0, recipe));
+      await _saveRecipes();
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedRecipes.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除菜谱？'),
+        content: Text('将删除选中的 ${_selectedRecipes.length} 道菜谱，此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() {
+      _recipes.removeWhere(_selectedRecipes.contains);
+      _selectedRecipes.clear();
+      _selectionMode = false;
+    });
+    await _saveRecipes();
+  }
+
+  Future<void> _exportRecipes() async {
+    try {
+      final file = await RecipeStore.exportRecipes(_recipes);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('备份已导出到 ${file.path}')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出失败：$error')));
+      }
+    }
+  }
+
+  Future<void> _importRecipes() async {
+    try {
+      final imported = await RecipeStore.importRecipes();
+      if (imported.isEmpty) return;
+      setState(() => _recipes.insertAll(0, imported));
+      await _saveRecipes();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已导入 ${imported.length} 道菜谱')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导入失败：$error')));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('果果厨房', style: TextStyle(fontWeight: FontWeight.bold)),
-      actions: const [
-        Padding(
-          padding: EdgeInsets.only(right: 16),
-          child: Icon(Icons.menu_book_outlined),
-        ),
-      ],
+      title: Text(
+        _selectionMode ? '已选择 ${_selectedRecipes.length} 道菜谱' : '果果厨房',
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+      actions: _selectionMode
+          ? [
+              IconButton(
+                tooltip: '删除已选菜谱',
+                onPressed: _selectedRecipes.isEmpty ? null : _deleteSelected,
+                icon: const Icon(Icons.delete_outline),
+              ),
+              IconButton(
+                tooltip: '退出选择',
+                onPressed: () => setState(() {
+                  _selectionMode = false;
+                  _selectedRecipes.clear();
+                }),
+                icon: const Icon(Icons.close),
+              ),
+            ]
+          : [
+              PopupMenuButton<String>(
+                tooltip: '数据与更新',
+                onSelected: (value) {
+                  switch (value) {
+                    case 'export':
+                      _exportRecipes();
+                      break;
+                    case 'import':
+                      _importRecipes();
+                      break;
+                    case 'update':
+                      _checkForUpdate(showUpToDate: true);
+                      break;
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'export',
+                    child: ListTile(
+                      leading: Icon(Icons.upload_file_outlined),
+                      title: Text('导出菜谱备份'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'import',
+                    child: ListTile(
+                      leading: Icon(Icons.download_outlined),
+                      title: Text('导入菜谱备份'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'update',
+                    child: ListTile(
+                      leading: Icon(Icons.system_update_alt_rounded),
+                      title: Text('检查更新'),
+                    ),
+                  ),
+                ],
+              ),
+              IconButton(
+                tooltip: '选择菜谱删除',
+                onPressed: () => setState(() => _selectionMode = true),
+                icon: const Icon(Icons.checklist_rounded),
+              ),
+            ],
     ),
     floatingActionButton: FloatingActionButton.extended(
-      onPressed: _addRecipe,
+      onPressed: _selectionMode ? null : _addRecipe,
       icon: const Icon(Icons.add),
       label: const Text('新建菜谱'),
     ),
@@ -177,10 +740,22 @@ class _RecipeHomePageState extends State<RecipeHomePage> {
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) => RecipeCard(
                 recipe: _shown[index],
-                onUpdated: (updated) => setState(() {
-                  final itemIndex = _recipes.indexOf(_shown[index]);
-                  if (itemIndex != -1) _recipes[itemIndex] = updated;
+                selectionMode: _selectionMode,
+                selected: _selectedRecipes.contains(_shown[index]),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    _selectedRecipes.add(_shown[index]);
+                  } else {
+                    _selectedRecipes.remove(_shown[index]);
+                  }
                 }),
+                onUpdated: (updated) {
+                  setState(() {
+                    final itemIndex = _recipes.indexOf(_shown[index]);
+                    if (itemIndex != -1) _recipes[itemIndex] = updated;
+                  });
+                  _saveRecipes();
+                },
               ),
             ),
           ),
@@ -294,21 +869,37 @@ class _EmptyKitchen extends StatelessWidget {
 }
 
 class RecipeCard extends StatelessWidget {
-  const RecipeCard({super.key, required this.recipe, required this.onUpdated});
+  const RecipeCard({
+    super.key,
+    required this.recipe,
+    required this.onUpdated,
+    required this.selectionMode,
+    required this.selected,
+    required this.onSelected,
+  });
   final Recipe recipe;
   final ValueChanged<Recipe> onUpdated;
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<bool> onSelected;
   @override
   Widget build(BuildContext context) => Card(
     elevation: 0,
     color: KitchenColors.surface,
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) =>
-              RecipeDetailPage(recipe: recipe, onUpdated: onUpdated),
-        ),
-      ),
+      onTap: () {
+        if (selectionMode) {
+          onSelected(!selected);
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                RecipeDetailPage(recipe: recipe, onUpdated: onUpdated),
+          ),
+        );
+      },
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -357,7 +948,23 @@ class RecipeCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: KitchenColors.muted),
+            if (selectionMode)
+              SizedBox(
+                width: 42,
+                child: Checkbox(
+                  value: selected,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  fillColor: WidgetStateProperty.resolveWith(
+                    (states) => states.contains(WidgetState.selected)
+                        ? KitchenColors.pink
+                        : KitchenColors.surface,
+                  ),
+                  onChanged: (value) => onSelected(value ?? false),
+                ),
+              )
+            else
+              const Icon(Icons.chevron_right, color: KitchenColors.muted),
           ],
         ),
       ),
@@ -618,7 +1225,7 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
     }
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     final ingredients = _ingredients
         .where((item) => item.name.trim().isNotEmpty)
@@ -635,14 +1242,25 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
       ).showSnackBar(const SnackBar(content: Text('请至少添加一个制作步骤')));
       return;
     }
+    final coverImages = await RecipeStore.persistImages(_coverImages);
+    final savedSteps = <RecipeStep>[];
+    for (final step in steps) {
+      savedSteps.add(
+        RecipeStep(
+          description: step.description,
+          images: await RecipeStore.persistImages(step.images),
+        ),
+      );
+    }
+    if (!mounted) return;
     Navigator.pop(
       context,
       Recipe(
         name: _name.text.trim(),
         category: _category,
-        coverImages: _coverImages,
+        coverImages: coverImages,
         ingredients: ingredients,
-        steps: steps,
+        steps: savedSteps,
         tip: _tip.text.trim(),
       ),
     );
