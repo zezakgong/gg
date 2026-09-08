@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.0.2",
+  "versionCode": 3,
+  "versionName": "1.0.3",
   "title": "果果厨房有新版本啦",
   "changelog": "• 新增在线检查与下载更新\n• 支持已保存菜谱编辑\n• 优化暗黑甜酷厨房视觉风格",
   "forceUpdate": false,

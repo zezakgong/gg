@@ -438,8 +438,23 @@ class _RecipeHomePageState extends State<RecipeHomePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _requestStartupPermissions();
+      _checkForUpdate();
+    });
     _loadRecipes();
+  }
+
+  Future<void> _requestStartupPermissions() async {
+    if (!Platform.isAndroid) return;
+    final installStatus = await Permission.requestInstallPackages.status;
+    if (!installStatus.isGranted) {
+      await Permission.requestInstallPackages.request();
+    }
+    final storageStatus = await Permission.manageExternalStorage.status;
+    if (!storageStatus.isGranted) {
+      await Permission.manageExternalStorage.request();
+    }
   }
 
   Future<void> _loadRecipes() async {
