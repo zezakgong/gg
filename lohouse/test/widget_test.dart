@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lohouse/main.dart';
 
 void main() {
-  testWidgets('shopping archive home renders', (WidgetTester tester) async {
-    await tester.pumpWidget(const ShoppingArchiveApp());
-    expect(find.text('购物档案'), findsOneWidget);
-    expect(find.text('添加第一件商品'), findsOneWidget);
+  testWidgets('guoguo kitchen home renders', (WidgetTester tester) async {
+    await tester.pumpWidget(const GuoguoKitchenApp());
+    expect(find.text('果果厨房'), findsOneWidget);
+    expect(find.text('创建第一份菜谱'), findsOneWidget);
   });
 }

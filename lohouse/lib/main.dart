@@ -1,224 +1,266 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-void main() => runApp(const ShoppingArchiveApp());
+abstract final class KitchenColors {
+  static const background = Color(0xff160b22);
+  static const surface = Color(0xff281438);
+  static const surfaceBright = Color(0xff38204d);
+  static const pink = Color(0xffff6eb5);
+  static const gold = Color(0xffffc44d);
+  static const text = Color(0xffffeff8);
+  static const muted = Color(0xffc9aecb);
+}
 
-class ShoppingArchiveApp extends StatelessWidget {
-  const ShoppingArchiveApp({super.key});
+void main() => runApp(const GuoguoKitchenApp());
+
+class GuoguoKitchenApp extends StatelessWidget {
+  const GuoguoKitchenApp({super.key});
+
   @override
   Widget build(BuildContext context) => MaterialApp(
+    title: '果果厨房',
     debugShowCheckedModeBanner: false,
-    title: '购物档案',
     theme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff5d54b4)),
-      scaffoldBackgroundColor: const Color(0xfff7f7fb),
-    ),
-    home: const ShoppingHomePage(),
-  );
-}
-
-enum PurchaseStage { listed, ordered, balancePaid, shipped, received }
-
-extension StageInfo on PurchaseStage {
-  String get label => switch (this) {
-    PurchaseStage.listed => '已上架',
-    PurchaseStage.ordered => '已下定',
-    PurchaseStage.balancePaid => '已付尾款',
-    PurchaseStage.shipped => '已发货',
-    PurchaseStage.received => '已到货',
-  };
-  IconData get icon => switch (this) {
-    PurchaseStage.listed => Icons.storefront_outlined,
-    PurchaseStage.ordered => Icons.shopping_bag_outlined,
-    PurchaseStage.balancePaid => Icons.account_balance_wallet_outlined,
-    PurchaseStage.shipped => Icons.local_shipping_outlined,
-    PurchaseStage.received => Icons.inventory_2_outlined,
-  };
-}
-
-class PurchaseItem {
-  PurchaseItem({
-    required this.name,
-    required this.price,
-    required this.images,
-    required this.dates,
-    required this.note,
-  });
-  final String name;
-  final double price;
-  final List<XFile> images;
-  final Map<PurchaseStage, DateTime?> dates;
-  final String note;
-  PurchaseStage get stage => PurchaseStage.values.lastWhere(
-    (stage) => dates[stage] != null,
-    orElse: () => PurchaseStage.listed,
-  );
-}
-
-class ShoppingHomePage extends StatefulWidget {
-  const ShoppingHomePage({super.key});
-  @override
-  State<ShoppingHomePage> createState() => _ShoppingHomePageState();
-}
-
-class _ShoppingHomePageState extends State<ShoppingHomePage> {
-  final List<PurchaseItem> _items = [];
-  PurchaseStage? _filter;
-  List<PurchaseItem> get _shown => _filter == null
-      ? _items
-      : _items.where((e) => e.stage == _filter).toList();
-  Future<void> _add() async {
-    final item = await Navigator.push<PurchaseItem>(
-      context,
-      MaterialPageRoute(builder: (_) => const PurchaseEditorPage()),
-    );
-    if (item != null) setState(() => _items.insert(0, item));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sum = _items.fold<double>(0, (value, item) => value + item.price);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          '购物档案',
-          style: TextStyle(fontWeight: FontWeight.bold),
+      colorScheme: const ColorScheme.dark(
+        primary: KitchenColors.pink,
+        onPrimary: Color(0xff310d2b),
+        secondary: KitchenColors.gold,
+        onSecondary: Color(0xff332006),
+        surface: KitchenColors.surface,
+        onSurface: KitchenColors.text,
+        primaryContainer: Color(0xff59315e),
+        onPrimaryContainer: Color(0xffffd9ee),
+      ),
+      scaffoldBackgroundColor: KitchenColors.background,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: KitchenColors.background,
+        foregroundColor: KitchenColors.text,
+        elevation: 0,
+      ),
+      cardTheme: CardThemeData(
+        color: KitchenColors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: KitchenColors.surface,
+        selectedColor: KitchenColors.pink,
+        secondarySelectedColor: KitchenColors.pink,
+        labelStyle: const TextStyle(color: KitchenColors.muted),
+        secondaryLabelStyle: const TextStyle(
+          color: Color(0xff300d2a),
+          fontWeight: FontWeight.bold,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: KitchenColors.surfaceBright,
+        labelStyle: const TextStyle(color: KitchenColors.muted),
+        hintStyle: const TextStyle(color: Color(0xffaa8db2)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xff543466)),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _add,
-        icon: const Icon(Icons.add),
-        label: const Text('记录商品'),
-      ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: _Summary(count: _items.length, total: sum),
-          ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 62,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                children: [
-                  _Filter(
-                    label: '全部',
-                    selected: _filter == null,
-                    onTap: () => setState(() => _filter = null),
-                  ),
-                  ...PurchaseStage.values.map(
-                    (s) => _Filter(
-                      label: s.label,
-                      selected: _filter == s,
-                      onTap: () => setState(() => _filter = s),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_shown.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _Empty(onAdd: _add),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 96),
-              sliver: SliverList.separated(
-                itemCount: _shown.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (_, i) => _PurchaseCard(item: _shown[i]),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+    ),
+    home: const RecipeHomePage(),
+  );
 }
 
-class _Summary extends StatelessWidget {
-  const _Summary({required this.count, required this.total});
-  final int count;
-  final double total;
+class Ingredient {
+  Ingredient({this.name = '', this.amount = ''});
+  String name;
+  String amount;
+}
+
+class RecipeStep {
+  RecipeStep({this.description = '', List<XFile>? images})
+    : images = images ?? [];
+  String description;
+  final List<XFile> images;
+}
+
+class Recipe {
+  Recipe({
+    required this.name,
+    required this.category,
+    required this.coverImages,
+    required this.ingredients,
+    required this.steps,
+    required this.tip,
+  });
+  final String name;
+  final String category;
+  final List<XFile> coverImages;
+  final List<Ingredient> ingredients;
+  final List<RecipeStep> steps;
+  final String tip;
+}
+
+class RecipeHomePage extends StatefulWidget {
+  const RecipeHomePage({super.key});
+  @override
+  State<RecipeHomePage> createState() => _RecipeHomePageState();
+}
+
+class _RecipeHomePageState extends State<RecipeHomePage> {
+  final List<Recipe> _recipes = [];
+  String _category = '全部';
+  final _categories = const ['全部', '家常菜', '烘焙', '甜品', '饮品', '汤羹', '其他'];
+
+  List<Recipe> get _shown => _category == '全部'
+      ? _recipes
+      : _recipes.where((recipe) => recipe.category == _category).toList();
+
+  Future<void> _addRecipe() async {
+    final recipe = await Navigator.of(
+      context,
+    ).push<Recipe>(MaterialPageRoute(builder: (_) => const RecipeEditorPage()));
+    if (recipe != null) setState(() => _recipes.insert(0, recipe));
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('果果厨房', style: TextStyle(fontWeight: FontWeight.bold)),
+      actions: const [
+        Padding(
+          padding: EdgeInsets.only(right: 16),
+          child: Icon(Icons.menu_book_outlined),
+        ),
+      ],
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: _addRecipe,
+      icon: const Icon(Icons.add),
+      label: const Text('新建菜谱'),
+    ),
+    body: CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _KitchenHeader(recipeCount: _recipes.length)),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 64,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              scrollDirection: Axis.horizontal,
+              children: _categories
+                  .map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(item),
+                        selected: _category == item,
+                        onSelected: (_) => setState(() => _category = item),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+        if (_shown.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _EmptyKitchen(onAdd: _addRecipe),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+            sliver: SliverList.separated(
+              itemCount: _shown.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) => RecipeCard(
+                recipe: _shown[index],
+                onUpdated: (updated) => setState(() {
+                  final itemIndex = _recipes.indexOf(_shown[index]);
+                  if (itemIndex != -1) _recipes[itemIndex] = updated;
+                }),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _KitchenHeader extends StatelessWidget {
+  const _KitchenHeader({required this.recipeCount});
+  final int recipeCount;
   @override
   Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+    margin: const EdgeInsets.fromLTRB(16, 8, 16, 2),
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
       gradient: const LinearGradient(
-        colors: [Color(0xff554dac), Color(0xff887cda)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xff42194e), Color(0xff210d35), Color(0xffcf4d98)],
       ),
-      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: const Color(0xff9c4d91)),
+      borderRadius: BorderRadius.circular(28),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x557f2c8c),
+          blurRadius: 22,
+          offset: Offset(0, 10),
+        ),
+      ],
     ),
     child: Row(
       children: [
-        const Icon(Icons.auto_awesome, color: Colors.white, size: 30),
+        Container(
+          width: 62,
+          height: 62,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x88000000),
+                blurRadius: 12,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/images/guoguo_kitchen_app_icon.png',
+            fit: BoxFit.cover,
+          ),
+        ),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('我的购物足迹', style: TextStyle(color: Colors.white70)),
+              const Text(
+                '果果食谱实验室',
+                style: TextStyle(color: Color(0xffffcbed), letterSpacing: 1),
+              ),
               const SizedBox(height: 4),
               Text(
-                '已记录 $count 件商品',
+                '收藏了 $recipeCount 道美味',
                 style: const TextStyle(
-                  fontSize: 19,
-                  color: Colors.white,
+                  fontSize: 20,
+                  color: KitchenColors.text,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
         ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            const Text(
-              '累计金额',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            Text(
-              '¥${total.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-          ],
-        ),
       ],
     ),
   );
 }
 
-class _Filter extends StatelessWidget {
-  const _Filter({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-    ),
-  );
-}
-
-class _Empty extends StatelessWidget {
-  const _Empty({required this.onAdd});
+class _EmptyKitchen extends StatelessWidget {
+  const _EmptyKitchen({required this.onAdd});
   final VoidCallback onAdd;
   @override
   Widget build(BuildContext context) => Center(
@@ -228,22 +270,22 @@ class _Empty extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.receipt_long_outlined,
-            size: 70,
+            Icons.menu_book_outlined,
+            size: 72,
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 16),
           const Text(
-            '还没有商品记录',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+            '还没有菜谱',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text('从上架到收货，完整保存每一次购买', textAlign: TextAlign.center),
+          const Text('记录食材、步骤和每一道菜的美好瞬间', textAlign: TextAlign.center),
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
-            label: const Text('添加第一件商品'),
+            label: const Text('创建第一份菜谱'),
           ),
         ],
       ),
@@ -251,123 +293,90 @@ class _Empty extends StatelessWidget {
   );
 }
 
-class _PurchaseCard extends StatelessWidget {
-  const _PurchaseCard({required this.item});
-  final PurchaseItem item;
+class RecipeCard extends StatelessWidget {
+  const RecipeCard({super.key, required this.recipe, required this.onUpdated});
+  final Recipe recipe;
+  final ValueChanged<Recipe> onUpdated;
   @override
   Widget build(BuildContext context) => Card(
     elevation: 0,
-    color: Colors.white,
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ProductImage(images: item.images),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.name,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '¥${item.price.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
-                _StageChip(stage: item.stage),
-                const SizedBox(height: 11),
-                _Timeline(item: item),
-                if (item.note.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      item.note,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.black54),
+    color: KitchenColors.surface,
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              RecipeDetailPage(recipe: recipe, onUpdated: onUpdated),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            _ImageBox(images: recipe.coverImages, width: 104, height: 104),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
                   ),
-              ],
+                  const SizedBox(height: 7),
+                  _CategoryPill(label: recipe.category),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.shopping_basket_outlined,
+                        size: 16,
+                        color: KitchenColors.gold,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${recipe.ingredients.length} 种食材',
+                        style: const TextStyle(color: KitchenColors.muted),
+                      ),
+                      const SizedBox(width: 14),
+                      const Icon(
+                        Icons.format_list_numbered,
+                        size: 16,
+                        color: KitchenColors.gold,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${recipe.steps.length} 个步骤',
+                        style: const TextStyle(color: KitchenColors.muted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const Icon(Icons.chevron_right, color: KitchenColors.muted),
+          ],
+        ),
       ),
     ),
   );
 }
 
-class _ProductImage extends StatelessWidget {
-  const _ProductImage({required this.images});
-  final List<XFile> images;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 88,
-    height: 112,
-    child: Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: SizedBox.expand(
-            child: images.isEmpty
-                ? ColoredBox(
-                    color: const Color(0xffeeeef5),
-                    child: Icon(
-                      Icons.image_outlined,
-                      color: Colors.grey.shade500,
-                    ),
-                  )
-                : Image.file(File(images.first.path), fit: BoxFit.cover),
-          ),
-        ),
-        if (images.length > 1)
-          Positioned(
-            right: 5,
-            bottom: 5,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${images.length} 张',
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-              ),
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-class _StageChip extends StatelessWidget {
-  const _StageChip({required this.stage});
-  final PurchaseStage stage;
+class _CategoryPill extends StatelessWidget {
+  const _CategoryPill({required this.label});
+  final String label;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(8),
     ),
     child: Text(
-      stage.label,
+      label,
       style: TextStyle(
         fontSize: 12,
         color: Theme.of(context).colorScheme.onPrimaryContainer,
@@ -376,116 +385,265 @@ class _StageChip extends StatelessWidget {
   );
 }
 
-class _Timeline extends StatelessWidget {
-  const _Timeline({required this.item});
-  final PurchaseItem item;
+class RecipeDetailPage extends StatelessWidget {
+  const RecipeDetailPage({
+    super.key,
+    required this.recipe,
+    required this.onUpdated,
+  });
+  final Recipe recipe;
+  final ValueChanged<Recipe> onUpdated;
+
+  Future<void> _editRecipe(BuildContext context) async {
+    final updated = await Navigator.of(context).push<Recipe>(
+      MaterialPageRoute(builder: (_) => RecipeEditorPage(recipe: recipe)),
+    );
+    if (updated != null && context.mounted) {
+      onUpdated(updated);
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
-    final current = item.stage.index;
-    return Row(
-      children: PurchaseStage.values.map((stage) {
-        final active = stage.index <= current;
-        final date = item.dates[stage];
-        return Expanded(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: stage.index == 0
-                          ? Colors.transparent
-                          : active
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey.shade300,
-                    ),
-                  ),
-                  Icon(
-                    stage.icon,
-                    size: 14,
-                    color: active
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey.shade400,
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: stage.index == 4
-                          ? Colors.transparent
-                          : stage.index < current
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey.shade300,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                date == null ? stage.label : _date(date),
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: active ? Colors.black87 : Colors.grey,
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(recipe.name),
+      actions: [
+        IconButton(
+          tooltip: '编辑菜谱',
+          onPressed: () => _editRecipe(context),
+          icon: const Icon(Icons.edit_outlined),
+        ),
+      ],
+    ),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      children: [
+        _ImageBox(
+          images: recipe.coverImages,
+          width: double.infinity,
+          height: 220,
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                recipe.name,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+            ),
+            _CategoryPill(label: recipe.category),
+          ],
+        ),
+        const SizedBox(height: 25),
+        const _SectionTitle(
+          icon: Icons.shopping_basket_outlined,
+          label: '食材清单',
+        ),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          child: Column(
+            children: recipe.ingredients
+                .map(
+                  (item) => ListTile(
+                    dense: true,
+                    title: Text(item.name),
+                    trailing: Text(
+                      item.amount,
+                      style: const TextStyle(color: KitchenColors.muted),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        const SizedBox(height: 22),
+        const _SectionTitle(icon: Icons.format_list_numbered, label: '制作步骤'),
+        const SizedBox(height: 10),
+        ...recipe.steps.asMap().entries.map(
+          (entry) => _StepView(number: entry.key + 1, step: entry.value),
+        ),
+        if (recipe.tip.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const _SectionTitle(icon: Icons.lightbulb_outline, label: '小贴士'),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(recipe.tip),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, color: Theme.of(context).colorScheme.primary),
+      const SizedBox(width: 8),
+      Text(
+        label,
+        style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+      ),
+    ],
+  );
+}
+
+class _StepView extends StatelessWidget {
+  const _StepView({required this.number, required this.step});
+  final int number;
+  final RecipeStep step;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 18),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 15,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          child: Text(
+            '$number',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(step.description),
+              if (step.images.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 130,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: step.images.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (_, index) => ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(step.images[index].path),
+                        width: 150,
+                        height: 130,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
-        );
-      }).toList(),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 }
 
-class PurchaseEditorPage extends StatefulWidget {
-  const PurchaseEditorPage({super.key});
+class RecipeEditorPage extends StatefulWidget {
+  const RecipeEditorPage({super.key, this.recipe});
+  final Recipe? recipe;
   @override
-  State<PurchaseEditorPage> createState() => _PurchaseEditorPageState();
+  State<RecipeEditorPage> createState() => _RecipeEditorPageState();
 }
 
-class _PurchaseEditorPageState extends State<PurchaseEditorPage> {
+class _RecipeEditorPageState extends State<RecipeEditorPage> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
-  final _price = TextEditingController();
-  final _note = TextEditingController();
+  final _tip = TextEditingController();
   final _picker = ImagePicker();
-  final _images = <XFile>[];
-  final Map<PurchaseStage, DateTime?> _dates = {
-    for (final stage in PurchaseStage.values) stage: null,
-  };
+  final _coverImages = <XFile>[];
+  final _ingredients = <Ingredient>[];
+  final _steps = <RecipeStep>[];
+  String _category = '家常菜';
+  final _categories = const ['家常菜', '烘焙', '甜品', '饮品', '汤羹', '其他'];
+
+  @override
+  void initState() {
+    super.initState();
+    final recipe = widget.recipe;
+    if (recipe == null) {
+      _ingredients.add(Ingredient());
+      _steps.add(RecipeStep());
+      return;
+    }
+    _name.text = recipe.name;
+    _tip.text = recipe.tip;
+    _category = recipe.category;
+    _coverImages.addAll(recipe.coverImages);
+    _ingredients.addAll(
+      recipe.ingredients.map(
+        (item) => Ingredient(name: item.name, amount: item.amount),
+      ),
+    );
+    _steps.addAll(
+      recipe.steps.map(
+        (item) => RecipeStep(
+          description: item.description,
+          images: List<XFile>.from(item.images),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _name.dispose();
-    _price.dispose();
-    _note.dispose();
+    _tip.dispose();
     super.dispose();
   }
 
-  Future<void> _pick() async {
-    final picks = await _picker.pickMultiImage(imageQuality: 82);
-    if (picks.isNotEmpty && mounted) setState(() => _images.addAll(picks));
-  }
-
-  Future<void> _choose(PurchaseStage stage) async {
-    final choice = await showDatePicker(
-      context: context,
-      initialDate: _dates[stage] ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (choice != null) setState(() => _dates[stage] = choice);
+  Future<void> _pickImages(List<XFile> destination) async {
+    final selected = await _picker.pickMultiImage(imageQuality: 82);
+    if (selected.isNotEmpty && mounted) {
+      setState(() => destination.addAll(selected));
+    }
   }
 
   void _save() {
     if (!_form.currentState!.validate()) return;
+    final ingredients = _ingredients
+        .where((item) => item.name.trim().isNotEmpty)
+        .toList();
+    final steps = _steps
+        .where(
+          (item) =>
+              item.description.trim().isNotEmpty || item.images.isNotEmpty,
+        )
+        .toList();
+    if (steps.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请至少添加一个制作步骤')));
+      return;
+    }
     Navigator.pop(
       context,
-      PurchaseItem(
+      Recipe(
         name: _name.text.trim(),
-        price: double.parse(_price.text.trim()),
-        images: _images,
-        dates: _dates,
-        note: _note.text.trim(),
+        category: _category,
+        coverImages: _coverImages,
+        ingredients: ingredients,
+        steps: steps,
+        tip: _tip.text.trim(),
       ),
     );
   }
@@ -493,104 +651,92 @@ class _PurchaseEditorPageState extends State<PurchaseEditorPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('记录商品'),
+      title: Text(widget.recipe == null ? '新建菜谱' : '编辑菜谱'),
       actions: [TextButton(onPressed: _save, child: const Text('保存'))],
     ),
     body: Form(
       key: _form,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
         children: [
-          const Text(
-            '商品信息',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
+          const _SectionTitle(icon: Icons.restaurant, label: '菜品信息'),
+          const SizedBox(height: 12),
           TextFormField(
             controller: _name,
             decoration: const InputDecoration(
-              labelText: '商品名称',
-              border: OutlineInputBorder(),
+              labelText: '菜品名称',
+              hintText: '例如：番茄牛腩',
             ),
-            validator: (v) => v == null || v.trim().isEmpty ? '请填写商品名称' : null,
+            validator: (value) =>
+                value == null || value.trim().isEmpty ? '请填写菜品名称' : null,
           ),
           const SizedBox(height: 12),
-          TextFormField(
-            controller: _price,
-            decoration: const InputDecoration(
-              labelText: '购买价格',
-              prefixText: '¥ ',
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            validator: (v) =>
-                double.tryParse(v ?? '') == null ? '请输入正确的金额' : null,
+          DropdownButtonFormField<String>(
+            initialValue: _category,
+            decoration: const InputDecoration(labelText: '菜品分类'),
+            items: _categories
+                .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+                .toList(),
+            onChanged: (value) => setState(() => _category = value!),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           const Text(
-            '商品图片',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            '菜品成品图（可多选）',
+            style: TextStyle(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 4),
-          const Text('可一次选择多张图片', style: TextStyle(color: Colors.black54)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              ..._images.asMap().entries.map(
-                (e) => _Thumb(
-                  image: e.value,
-                  onDelete: () => setState(() => _images.removeAt(e.key)),
-                ),
-              ),
-              InkWell(
-                onTap: _pick,
-                borderRadius: BorderRadius.circular(12),
-                child: Ink(
-                  width: 86,
-                  height: 86,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.add_photo_alternate_outlined),
-                ),
-              ),
-            ],
+          const SizedBox(height: 9),
+          _PhotoPicker(
+            images: _coverImages,
+            onAdd: () => _pickImages(_coverImages),
+            onRemove: (index) => setState(() => _coverImages.removeAt(index)),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            '购买进度',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          const SizedBox(height: 26),
+          const _SectionTitle(
+            icon: Icons.shopping_basket_outlined,
+            label: '食材清单',
           ),
           const SizedBox(height: 8),
-          ...PurchaseStage.values.map(
-            (s) => Card(
-              elevation: 0,
-              child: ListTile(
-                leading: Icon(s.icon),
-                title: Text(s.label),
-                subtitle: Text(_dates[s] == null ? '尚未记录' : _date(_dates[s]!)),
-                trailing: _dates[s] == null
-                    ? const Icon(Icons.calendar_month_outlined)
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _dates[s] = null),
-                      ),
-                onTap: () => _choose(s),
-              ),
+          ..._ingredients.asMap().entries.map(
+            (entry) => _IngredientRow(
+              ingredient: entry.value,
+              allowRemove: _ingredients.length > 1,
+              onChanged: () => setState(() {}),
+              onDelete: () => setState(() => _ingredients.removeAt(entry.key)),
             ),
           ),
-          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: () => setState(() => _ingredients.add(Ingredient())),
+            icon: const Icon(Icons.add),
+            label: const Text('添加食材'),
+          ),
+          const SizedBox(height: 20),
+          const _SectionTitle(icon: Icons.format_list_numbered, label: '制作步骤'),
+          const SizedBox(height: 8),
+          ..._steps.asMap().entries.map(
+            (entry) => _RecipeStepEditor(
+              number: entry.key + 1,
+              step: entry.value,
+              canRemove: _steps.length > 1,
+              onDelete: () => setState(() => _steps.removeAt(entry.key)),
+              onChanged: () => setState(() {}),
+              onPick: () => _pickImages(entry.value.images),
+              onRemoveImage: (index) =>
+                  setState(() => entry.value.images.removeAt(index)),
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => setState(() => _steps.add(RecipeStep())),
+            icon: const Icon(Icons.add),
+            label: const Text('添加步骤'),
+          ),
+          const SizedBox(height: 24),
+          const _SectionTitle(icon: Icons.lightbulb_outline, label: '小贴士'),
+          const SizedBox(height: 10),
           TextFormField(
-            controller: _note,
+            controller: _tip,
             decoration: const InputDecoration(
-              labelText: '备注（选填）',
+              labelText: '记录火候、替代食材等（选填）',
               alignLabelWithHint: true,
-              border: OutlineInputBorder(),
             ),
             minLines: 3,
             maxLines: 5,
@@ -601,38 +747,252 @@ class _PurchaseEditorPageState extends State<PurchaseEditorPage> {
   );
 }
 
-class _Thumb extends StatelessWidget {
-  const _Thumb({required this.image, required this.onDelete});
-  final XFile image;
+class _IngredientRow extends StatelessWidget {
+  const _IngredientRow({
+    required this.ingredient,
+    required this.allowRemove,
+    required this.onChanged,
+    required this.onDelete,
+  });
+  final Ingredient ingredient;
+  final bool allowRemove;
+  final VoidCallback onChanged;
   final VoidCallback onDelete;
   @override
-  Widget build(BuildContext context) => Stack(
-    clipBehavior: Clip.none,
-    children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.file(
-          File(image.path),
-          width: 86,
-          height: 86,
-          fit: BoxFit.cover,
-        ),
-      ),
-      Positioned(
-        right: -7,
-        top: -7,
-        child: InkWell(
-          onTap: onDelete,
-          child: const CircleAvatar(
-            radius: 11,
-            backgroundColor: Colors.black54,
-            child: Icon(Icons.close, color: Colors.white, size: 14),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      children: [
+        Expanded(
+          flex: 3,
+          child: TextFormField(
+            initialValue: ingredient.name,
+            decoration: const InputDecoration(hintText: '食材名称', isDense: true),
+            onChanged: (value) {
+              ingredient.name = value;
+              onChanged();
+            },
           ),
         ),
-      ),
-    ],
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: TextFormField(
+            initialValue: ingredient.amount,
+            decoration: const InputDecoration(hintText: '用量', isDense: true),
+            onChanged: (value) {
+              ingredient.amount = value;
+              onChanged();
+            },
+          ),
+        ),
+        if (allowRemove)
+          IconButton(
+            onPressed: onDelete,
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+      ],
+    ),
   );
 }
 
-String _date(DateTime date) =>
-    '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+class _RecipeStepEditor extends StatelessWidget {
+  const _RecipeStepEditor({
+    required this.number,
+    required this.step,
+    required this.canRemove,
+    required this.onDelete,
+    required this.onChanged,
+    required this.onPick,
+    required this.onRemoveImage,
+  });
+  final int number;
+  final RecipeStep step;
+  final bool canRemove;
+  final VoidCallback onDelete;
+  final VoidCallback onChanged;
+  final VoidCallback onPick;
+  final ValueChanged<int> onRemoveImage;
+  @override
+  Widget build(BuildContext context) => Card(
+    elevation: 0,
+    margin: const EdgeInsets.only(bottom: 12),
+    color: KitchenColors.surfaceBright,
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                child: Text(
+                  '$number',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('步骤说明', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              if (canRemove)
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+          TextFormField(
+            initialValue: step.description,
+            decoration: const InputDecoration(
+              hintText: '例如：牛腩冷水下锅，加入姜片焯水…',
+              alignLabelWithHint: true,
+            ),
+            minLines: 2,
+            maxLines: 4,
+            onChanged: (value) {
+              step.description = value;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '步骤图片（可多选）',
+            style: TextStyle(fontSize: 13, color: KitchenColors.muted),
+          ),
+          const SizedBox(height: 7),
+          _PhotoPicker(
+            images: step.images,
+            onAdd: onPick,
+            onRemove: onRemoveImage,
+            small: true,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PhotoPicker extends StatelessWidget {
+  const _PhotoPicker({
+    required this.images,
+    required this.onAdd,
+    required this.onRemove,
+    this.small = false,
+  });
+  final List<XFile> images;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+  final bool small;
+  @override
+  Widget build(BuildContext context) {
+    final size = small ? 68.0 : 88.0;
+    return Wrap(
+      spacing: 9,
+      runSpacing: 9,
+      children: [
+        ...images.asMap().entries.map(
+          (entry) => Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Image.file(
+                  File(entry.value.path),
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              Positioned(
+                right: -6,
+                top: -6,
+                child: InkWell(
+                  onTap: () => onRemove(entry.key),
+                  child: const CircleAvatar(
+                    radius: 10,
+                    backgroundColor: Colors.black54,
+                    child: Icon(Icons.close, color: Colors.white, size: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        InkWell(
+          onTap: onAdd,
+          borderRadius: BorderRadius.circular(11),
+          child: Ink(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(
+              Icons.add_photo_alternate_outlined,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImageBox extends StatelessWidget {
+  const _ImageBox({
+    required this.images,
+    required this.width,
+    required this.height,
+  });
+  final List<XFile> images;
+  final double width;
+  final double height;
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(15),
+    child: SizedBox(
+      width: width,
+      height: height,
+      child: images.isEmpty
+          ? ColoredBox(
+              color: KitchenColors.surfaceBright,
+              child: Icon(
+                Icons.restaurant,
+                size: 38,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(File(images.first.path), fit: BoxFit.cover),
+                if (images.length > 1)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${images.length} 张',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+    ),
+  );
+}
